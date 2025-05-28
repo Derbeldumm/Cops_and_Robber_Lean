@@ -424,22 +424,59 @@ number k (i.e. the infimum of such widths) for which there is a cop strategy tha
 guarantees, against a robber moving legally with speed s, that the robber is eventually
 caught while using at most k cops in every round.
 -/
-noncomputable def va_cw {n : ℕ} (G : SimpleGraph (Fin n)) (s : ℕ) : ℕ :=
-  sInf { width : ℕ | ∃ f : cop_strategy n, valid_cop_strategy f G s width }
+noncomputable def va_cw {n : ℕ} (G : SimpleGraph (Fin (n+1))) (s : ℕ) : ℕ :=
+  sInf { width : ℕ | ∃ f : cop_strategy (n+1), valid_cop_strategy f G s width }
+
+
+lemma ex_copstrat {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite] (s:ℕ): n+1 ∈ { width : ℕ | ∃ f : cop_strategy (n+1), valid_cop_strategy f G s width } := by
+  simp
+  let f : cop_strategy (n+1) := sorry
+  use f
+  unfold valid_cop_strategy
+  intro play
+  intro ⟨valid_robber, valid_strat_play⟩
+  constructor
+  · sorry
+  ·  sorry
+
+
 
 
 theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
+  let k := degeneracy G
+  have k_eq : k=degeneracy G := rfl
   apply Nat.le_antisymm
   · --build robber strat from obstruction
-
+    have : degeneracy G ≥ k := by exact Nat.le_refl (degeneracy G)
+    rw [(degeneracy_obstruction G)] at this
+    obtain ⟨U, h_U⟩ := this
+    rw [← k_eq]
+    unfold va_cw
+    apply le_csInf
+    exact Set.nonempty_of_mem (ex_copstrat G 1)
+    intro width
+    simp
+    intro strat
     sorry
+
   · --build cop strat from Layout
-    have : (degeneracy G) ∈ ({n' | ∃ L, isValidDegeneracy G L n'}) := by
-      unfold degeneracy
+    have : k ∈ ({n' | ∃ L, isValidDegeneracy G L n'}) := by
+      unfold k; unfold degeneracy
       apply Nat.sInf_mem
       exact Set.nonempty_of_mem (ex_Layout G)
     simp at this
     obtain ⟨L, h_L⟩ := this
+    rw [← k_eq]
     unfold va_cw
     apply Nat.sInf_le
     simp
+    let f : cop_strategy (n+1) := sorry
+    use f
+    unfold valid_cop_strategy
+    intro play
+    intro ⟨h_valid_robber, h_valid_play⟩
+    constructor
+    · unfold robber_caught
+      sorry
+    · unfold play_width
+      sorry
