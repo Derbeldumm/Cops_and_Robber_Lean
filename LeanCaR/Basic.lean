@@ -18,9 +18,12 @@ namespace cops_and_robbers
 /-- A layout is represented as a ordering of vertices, so as -/
 abbrev Layout (n : ℕ) : Type := Equiv.Perm (Fin n)
 
+
+def AdjPred {n:ℕ} (G: SimpleGraph (Fin n)) [G.LocallyFinite] (L: Layout n) (v: Fin n) :=
+  { w : Fin n | (L w) < (L v) ∧ w ∈ G.neighborFinset v}.toFinset
 /-- Count of adjacent predecessors for a vertex v in a given layout -/
 def countAdjPred {n : ℕ} (G : SimpleGraph (Fin n)) [G.LocallyFinite] (L : Layout n) (v : Fin n) : ℕ :=
-  Finset.card { w : Fin n | (L w) < (L v) ∧ w ∈ G.neighborFinset v }
+  Finset.card (AdjPred G L v)
 
 /-- Verifies if a number k satisfies the degeneracy condition for a given layout -/
 def isValidDegeneracy {n : ℕ} (G : SimpleGraph (Fin n)) [G.LocallyFinite] (L : Layout n) (k : ℕ) : Prop :=
@@ -39,6 +42,7 @@ lemma ex_Layout {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite]: n ∈ 
   unfold isValidDegeneracy
   intro v
   unfold countAdjPred
+  unfold AdjPred
   unfold L
   simp
   have subset_eq : {w | w < v ∧ ¬v = w} ⊆ {w | v ≠  w} := by
@@ -84,6 +88,7 @@ theorem clique_has_deg_n {n : ℕ} : degeneracy (SimpleGraph.completeGraph (Fin 
       intro L
       unfold isValidDegeneracy
       unfold countAdjPred
+      unfold AdjPred
       simp
       intro hvalid
       let lastVertex : Fin (n+1) := L.symm (Fin.last (n))
@@ -214,6 +219,7 @@ theorem degeneracy_obstruction {n: ℕ} (G : SimpleGraph (Fin (n+1))) [G.Locally
             apply Finset.card_le_card
             apply Finset.subset_iff.mpr
             intro x
+            unfold AdjPred
             simp
             intro newL_lt
             intro adj
@@ -260,10 +266,11 @@ theorem degeneracy_obstruction {n: ℕ} (G : SimpleGraph (Fin (n+1))) [G.Locally
           apply h_L at h'
           unfold countAdjPred
           calc
-          _ ≤ ({w | L w < L a ∧ w ∈ G.neighborFinset a}: Finset (Fin (n+1))).card := by
+          _ ≤ (AdjPred G L a).card := by
             apply Finset.card_le_card
             refine Finset.subset_iff.mpr ?_
             intro x
+            unfold AdjPred
             simp
             intro h1
             intro h2
@@ -300,6 +307,7 @@ theorem degeneracy_obstruction {n: ℕ} (G : SimpleGraph (Fin (n+1))) [G.Locally
       · simp at h
         trans 0
         · unfold countAdjPred
+          unfold AdjPred
           simp
           rw [h]
           simp
@@ -338,13 +346,15 @@ theorem degeneracy_obstruction {n: ℕ} (G : SimpleGraph (Fin (n+1))) [G.Locally
       unfold countAdjPred at HL
       calc
       _ ≤ (G.neighborFinset u ∩ U).card := hU_count
-      _ ≤ ({w | L w < L u ∧ w ∈ G.neighborFinset u} : Finset (Fin (n+1))).card := by
+      _ ≤ (AdjPred G L u).card := by
         apply Finset.card_le_card
         apply Finset.subset_iff.mpr
         intro x
         simp
         intro adj_ux
         intro x_in_u
+        unfold AdjPred
+        simp
         constructor
         · specialize u_max x
           have u_max := u_max x_in_u
@@ -359,64 +369,58 @@ theorem degeneracy_obstruction {n: ℕ} (G : SimpleGraph (Fin (n+1))) [G.Locally
 
 /--
 A play of the cops‐and‐robber game on a finite graph.
-• S : ℕ → Finset (Fin n) gives the cops’ positions (as a finset)
+• S : ℕ → Finset (Fin n) gives the cops' positions (as a finset)
   in each round (with S 0 = ∅).
-• R : ℕ → Fin n gives the robber’s position in each round.
+• R : ℕ → Fin n gives the robber's position in each round.
 -/
 structure Play {n : ℕ} (G : SimpleGraph (Fin n)) where
-  (S : ℕ → Finset (Fin n))
+  (C : ℕ → Finset (Fin n))
   (R : ℕ → Fin n)
-  (init : S 0 = ∅)
+  (init : C 0 = ∅)
 
 /--
 A robber move is valid for a given speed if for every round i there exists a walk
-in G from the robber’s position at round i to his position at round i+1 such that:
+in G from the robber's position at round i to his position at round i+1 such that:
   • The set of vertices (support) visited by the walk, when converted to a finset,
     does not intersect the set of vertices guarded in both rounds i and i+1.
-  • The walk’s length is at most the allowed speed.
+  • The walk's length is at most the allowed speed.
 -/
 def valid_robber {n : ℕ} {G : SimpleGraph (Fin n)} (play : Play G) (speed : ℕ) : Prop :=
-  ∀ i : ℕ,
-    ∃ (walk : SimpleGraph.Walk G (play.R i) (play.R (i+1))),
-      (walk.support.toFinset ∩ (play.S i) ∩ (play.S (i+1)) = ∅) ∧
+  ∀ t : ℕ,
+    ∃ (walk : SimpleGraph.Walk G (play.R t) (play.R (t+1))),
+      (walk.support.toFinset ∩ (play.C t) ∩ (play.C (t+1)) = ∅) ∧
       walk.support.length ≤ (speed+1)
 
 /--
-The robber is caught if there is some round t at which the robber’s position
+The robber is caught if there is some round t at which the robber's position
 is guarded by a cop.
 -/
 def robber_caught {n : ℕ} {G : SimpleGraph (Fin n)} (p : Play G) : Prop :=
-  ∃ t : ℕ, p.R t ∈ p.S t
+  ∃ t : ℕ, p.R t ∈ p.C t
 
-/--
-A play has width at most `width` if at every round the number of cops (given by
-the cardinality of the cops’ set) does not exceed `width`.
--/
-def play_width {n : ℕ} {G : SimpleGraph (Fin n)} (play : Play G) (width : ℕ) : Prop :=
-  ∀ i : ℕ, (play.S i).card ≤ width
 
 /--
 A cop strategy is a function that, given the current positions of the cops and
-the robber, produces the cops’ positions for the next round.
+the robber, produces the cops' positions for the next round.
 -/
 abbrev cop_strategy (n : ℕ) : Type :=
-  (Finset (Fin n) × (Fin n)) → Finset (Fin n)
+  (curr_positions: Finset (Fin n) × (Fin n)) → Finset (Fin n)
 
 /--
 A cop strategy is valid (with parameters speed and width) if for every play on G
 that meets the following:
   - The robber always moves legally (with speed `speed`).
-  - The cops’ positions are updated according to the strategy.
+  - The cops' positions are updated according to the strategy.
 it follows that:
   - The robber is eventually caught.
   - The number of cops used at every round does not exceed `width`.
 -/
 def valid_cop_strategy {n : ℕ}
   (strat : cop_strategy n) (G : SimpleGraph (Fin n)) (speed : ℕ) (width : ℕ): Prop :=
-  ∀ play : Play G,
-    ((valid_robber play speed) ∧ (∀ i : ℕ, play.S (i+1) = strat (play.S i, play.R i)))
-    →
-    (robber_caught play ∧ play_width play width)
+  (∀x:(Finset (Fin n) × (Fin n)), (strat x).card ≤ width
+  )∧
+  (∀ play : Play G,
+    ((valid_robber play speed) ∧ (∀ i : ℕ, play.C (i+1) = strat (play.C i, play.R i))) → robber_caught play)
 
 /--
 The parameter va_cw (for a robber of speed s on a graph G) is defined as the least
@@ -430,19 +434,21 @@ noncomputable def va_cw {n : ℕ} (G : SimpleGraph (Fin (n+1))) (s : ℕ) : ℕ 
 
 lemma ex_copstrat {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite] (s:ℕ): n+1 ∈ { width : ℕ | ∃ f : cop_strategy (n+1), valid_cop_strategy f G s width } := by
   simp
-  let f : cop_strategy (n+1) := sorry
+  let f : cop_strategy (n+1) := fun (curr_positions) => Finset.univ
   use f
   unfold valid_cop_strategy
-  intro play
-  intro ⟨valid_robber, valid_strat_play⟩
   constructor
-  · sorry
-  ·  sorry
+  · simp [*]
+    aesop
+  · unfold robber_caught
+    intro play
+    intro
+    use 1
+    simp_all
+    aesop
 
-
-
-
-theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
+noncomputable section
+ theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
   let k := degeneracy G
   have k_eq : k=degeneracy G := rfl
   apply Nat.le_antisymm
@@ -457,26 +463,142 @@ theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyF
     intro width
     simp
     intro strat
-    sorry
+    intro valid_strat
+    unfold valid_cop_strategy at valid_strat
+    contrapose! valid_strat
+    intro strat_width
+    apply Nat.le_of_lt_add_one at valid_strat
 
+    -- let u : Fin (n+1) =
+    let positions : ℕ → (Finset (Fin (n+1)) × U) := fun t =>
+      Nat.rec
+        (
+          let u₀ := Classical.choose h_U.left
+          let h₀ : u₀ ∈ U := Classical.choose_spec h_U.left
+          (∅, ⟨u₀, h₀⟩)
+        )
+        (fun _ (cops, robber) =>
+          let candidates := (G.neighborFinset robber ∩ U) \ strat (cops, robber)
+          if h : candidates.Nonempty then
+            let r := Classical.choose h
+            have hr : r ∈ candidates := Classical.choose_spec h
+            have : r ∈ U := by
+              simp [candidates] at hr
+              exact hr.1.2  -- From r ∈ (G.neighborFinset u ∩ U
+            (strat (cops, robber),⟨r,this⟩)
+          else
+            (strat (cops, robber),robber)
+        )
+        t
+    let play : Play G := {
+      C := fun t => (positions t).1,
+      R := fun t => (positions t).2.1,
+      init := by
+        simp [positions]
+    }
+    use play
+    constructor
+    · constructor
+      · unfold valid_robber
+        intro t
+        let candidates := (G.neighborFinset (positions t).2 ∩ U) \ strat ((positions t).1, (positions t).2.1)
+        by_cases h : candidates.Nonempty
+        · sorry
+        · have h_next : positions (t+1) = ((G.neighborFinset (positions t).2 ∩ U),(positions t).2) := by
+            simp [positions, Nat.rec]
+            -- rwa [if_neg (by sorry)]
+            sorry
+          have h_eq : play.R (t+1) = play.R (t) := by
+            calc
+            _ = (positions (t+1)).2.1 := rfl
+            _ = (positions t).2.1 := by simp_all
+            _ = play.R (t) := by rfl
+          rw [h_eq]
+          use SimpleGraph.Walk.nil
+          simp
+          refine Finset.singleton_inter_of_not_mem ?_
+          simp
+          intro
+          have h_cops : play.C (t + 1) = (G.neighborFinset (play.R t) ∩ U) := by
+            calc
+            _ = (positions (t+1)).1 := rfl
+            _ = (G.neighborFinset (positions t).2 ∩ U) := by simp_all
+            _ = (G.neighborFinset (play.R t) ∩ U) := by congr
+          rw [h_cops]
+          simp
+      · sorry
+    · sorry
   · --build cop strat from Layout
     have : k ∈ ({n' | ∃ L, isValidDegeneracy G L n'}) := by
       unfold k; unfold degeneracy
       apply Nat.sInf_mem
       exact Set.nonempty_of_mem (ex_Layout G)
     simp at this
+
     obtain ⟨L, h_L⟩ := this
-    rw [← k_eq]
     unfold va_cw
     apply Nat.sInf_le
     simp
-    let f : cop_strategy (n+1) := sorry
+    let f : cop_strategy (n+1) := fun (curr_positions) =>
+      insert curr_positions.snd (AdjPred G L curr_positions.snd)
     use f
     unfold valid_cop_strategy
-    intro play
-    intro ⟨h_valid_robber, h_valid_play⟩
     constructor
-    · unfold robber_caught
-      sorry
-    · unfold play_width
-      sorry
+    · intro positions
+      simp [f]
+      rw [← k_eq]
+      trans (AdjPred G L (positions.2)).card + 1
+      · exact Finset.card_insert_le (positions.2) (AdjPred G L (positions.2))
+      · simp
+        exact h_L (positions.2)
+    · intro play
+      intro ⟨h_valid_robber, h_valid_play⟩
+      unfold robber_caught
+      have h_c : ∀t, (∃s≤t, play.R s ∈ play.C s) ∨ (L (play.R t)).val ≥ t := by
+        intro t
+        induction t
+        case zero =>
+          simp
+        case succ t h_ind =>
+          contrapose h_ind
+          simp_all
+          obtain ⟨h1,h2⟩ := h_ind
+          constructor
+          · intro x
+            specialize h1 x
+            intro h
+            have : x ≤ t+1 := by
+              exact Nat.le_add_right_of_le h
+            apply h1 at this
+            exact this
+          · have : (L (play.R t)) < (L (play.R (t + 1))) := by
+              contrapose! h1
+              use (t+1)
+              simp
+              simp [*]
+              simp [f]
+              apply Fin.eq_or_lt_of_le at h1
+              rcases h1 with inl | inr
+              · left
+                aesop
+              · right
+                unfold AdjPred
+                simp_all
+                unfold valid_robber at h_valid_robber
+                specialize h_valid_robber t
+                obtain ⟨walk,⟨_,h_walk⟩⟩ := h_valid_robber
+                simp at h_walk
+                have h : walk.length = 1 := by
+                  cases' Nat.le_one_iff_eq_zero_or_eq_one.mp h_walk with h0 h1
+                  · apply SimpleGraph.Walk.eq_of_length_eq_zero at h0
+                    have : L (play.R (t + 1)) = L (play.R t) := by
+                      exact congrArg (⇑L) (id (Eq.symm h0))
+                    aesop
+                  · exact h1
+                exact SimpleGraph.Walk.adj_of_length_eq_one h
+            omega
+      specialize h_c (n+1)
+      contrapose! h_c
+      constructor
+      · exact fun s _ ↦ h_c s
+      · simp
