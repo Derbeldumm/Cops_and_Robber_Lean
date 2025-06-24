@@ -505,14 +505,20 @@ noncomputable section
     · constructor
       · unfold valid_robber
         intro t
-        let candidates := (G.neighborFinset (positions' t).2 ∩ U) \ strat ((positions' t).1, (positions' t).2.1)
+        set candidates := (G.neighborFinset (positions' t).2 ∩ U) \ strat ((positions' t).1, (positions' t).2.1)
+          with h_candidates_eq
         by_cases h : candidates.Nonempty
         · sorry
         · have h_next : positions' (t+1) = ((G.neighborFinset (positions' t).2 ∩ U),(positions' t).2) := by
             simp_rw [positions']
             rw [positions]
             simp [positions', h, candidates]
-            sorry
+            rw [Finset.not_nonempty_iff_eq_empty, h_candidates_eq,
+              Finset.sdiff_eq_empty_iff_subset] at h
+            unfold positions' at h
+            apply Finset.eq_of_superset_of_card_ge h
+            apply ((strat_width _).trans valid_strat).trans (h_U.right _
+              (Finset.coe_mem _))
           have h_eq : play.R (t+1) = play.R (t) := by
             calc
             _ = (positions' (t+1)).2.1 := rfl
