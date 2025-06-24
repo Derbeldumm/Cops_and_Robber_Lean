@@ -447,7 +447,7 @@ lemma ex_copstrat {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite] (s:�
     simp_all
     aesop
 
-noncomputable def positions
+noncomputable def positions_from_hideout
     {n : ℕ} {G : SimpleGraph (Fin (n + 1))} {U : Finset (Fin (n + 1))}
     [G.LocallyFinite] {k : ℕ}
     (h_U : U.Nonempty ∧ ∀ u ∈ U, (G.neighborFinset u ∩ U).card ≥ k)
@@ -458,17 +458,17 @@ noncomputable def positions
     let h₀ : u₀ ∈ U := Classical.choose_spec h_U.left
     (∅, ⟨u₀, h₀⟩)
 | .succ t =>
-    let candidates := (G.neighborFinset (positions h_U strat t).2 ∩ U) \ strat
-      ((positions h_U strat t).1, (positions h_U strat t).2)
+    let candidates := (G.neighborFinset (positions_from_hideout h_U strat t).2 ∩ U) \ strat
+      ((positions_from_hideout h_U strat t).1, (positions_from_hideout h_U strat t).2)
     if h : candidates.Nonempty then
       let r := Classical.choose h
       have hr : r ∈ candidates := Classical.choose_spec h
       have : r ∈ U := by
         simp [candidates] at hr
         exact hr.1.2
-      (strat ((positions h_U strat t).1, (positions h_U strat t).2),⟨r,this⟩)
+      (strat ((positions_from_hideout h_U strat t).1, (positions_from_hideout h_U strat t).2),⟨r,this⟩)
     else
-      (strat ((positions h_U strat t).1, (positions h_U strat t).2),(positions h_U strat t).2)
+      (strat ((positions_from_hideout h_U strat t).1, (positions_from_hideout h_U strat t).2),(positions_from_hideout h_U strat t).2)
 
 noncomputable section
  theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
@@ -492,34 +492,76 @@ noncomputable section
     intro strat_width
     apply Nat.le_of_lt_add_one at valid_strat
 
-    let positions' := positions h_U strat
+    let positions' := positions_from_hideout h_U strat
 
     -- let u : Fin (n+1) =
     let play : Play G := {
       C := fun t => (positions' t).1,
       R := fun t => (positions' t).2.1,
-      init := by simp [positions', positions]
+      init := by simp [positions', positions_from_hideout]
     }
     use play
+    unfold robber_caught
+    simp
     constructor
-    · constructor
-      · unfold valid_robber
-        intro t
-        let candidates := (G.neighborFinset (positions' t).2 ∩ U) \ strat ((positions' t).1, (positions' t).2.1)
-        by_cases h : candidates.Nonempty
-        · sorry
-        · have h_next : positions' (t+1) = ((G.neighborFinset (positions' t).2 ∩ U),(positions' t).2) := by
-            simp_rw [positions']
-            rw [positions]
-            simp [positions', h, candidates]
-            sorry
-          have h_eq : play.R (t+1) = play.R (t) := by
-            calc
-            _ = (positions' (t+1)).2.1 := rfl
-            _ = (positions' t).2.1 := by simp_all
-            _ = play.R (t) := by rfl
-          rw [h_eq]
-          use SimpleGraph.Walk.nil
+    · unfold valid_robber
+      rw [← forall_and]
+      intro t
+      let candidates := (G.neighborFinset (positions' t).2 ∩ U) \ strat ((positions' t).1, (positions' t).2.1)
+      by_cases h : candidates.Nonempty
+      · have h_next : (positions' (t+1)).2.1 ∈ candidates := by
+          simp_rw [positions']
+          rw [positions_from_hideout]
+          simp only [positions', h, candidates]
+          simp only [↓reduceDIte]
+          apply Classical.choose_spec
+        simp
+
+        have h_adj : G.Adj ↑(positions' t).2 ↑(positions' (t + 1)).2 := by
+          aesop
+        constructor
+        · use SimpleGraph.Walk.cons h_adj SimpleGraph.Walk.nil
+          simp
+          have h1 : play.R t ∉ play.C t := sorry
+          have h2 : ↑(positions' (t + 1)).2 ∉ play.C (t+1) := sorry
+          aesop
+        · simp [play]
+          simp_rw [positions']
+          rw [positions_from_hideout]
+          simp only [positions', h, candidates]
+          simp
+
+      · have h_next : positions' (t+1) = ((G.neighborFinset (positions' t).2 ∩ U),(positions' t).2) := by
+          simp_rw [positions']
+          rw [positions_from_hideout]
+          simp [positions', h, candidates]
+
+          let S_strat := strat ((positions_from_hideout h_U strat t).1, ↑((positions_from_hideout h_U strat t).2))
+          let S_neighbors := G.neighborFinset ↑((positions_from_hideout h_U strat t).2) ∩ U
+
+          apply Eq.symm
+          apply Finset.eq_of_subset_of_card_le
+          · have h_empty : S_neighbors \ S_strat = ∅ := by
+              exact Finset.not_nonempty_iff_eq_empty.mp h
+            exact Finset.sdiff_eq_empty_iff_subset.mp h_empty
+          · have card_strat_le_k : S_strat.card ≤ k :=
+              (strat_width _).trans valid_strat
+
+            have robber_in_U : ↑((positions_from_hideout h_U strat t).2) ∈ U :=
+              (positions_from_hideout h_U strat t).2.property
+            have card_neighbors_ge_k : S_neighbors.card ≥ k :=
+              h_U.2 _ robber_in_U
+
+            -- Combining the two inequalities proves the goal.
+            exact card_strat_le_k.trans card_neighbors_ge_k
+        have h_eq : play.R (t+1) = play.R (t) := by
+          calc
+          _ = (positions' (t+1)).2.1 := rfl
+          _ = (positions' t).2.1 := by simp_all
+          _ = play.R (t) := by rfl
+        rw [h_eq]
+        constructor
+        · use SimpleGraph.Walk.nil
           simp
           refine Finset.singleton_inter_of_not_mem ?_
           simp
@@ -531,8 +573,14 @@ noncomputable section
             _ = (G.neighborFinset (play.R t) ∩ U) := by congr
           rw [h_cops]
           simp
-      · sorry
+        · simp [play]
+          simp_rw [positions']
+          rw [positions_from_hideout]
+          simp only [positions', h, candidates]
+          simp
     · sorry
+
+
   · --build cop strat from Layout
     have : k ∈ ({n' | ∃ L, isValidDegeneracy G L n'}) := by
       unfold k; unfold degeneracy
