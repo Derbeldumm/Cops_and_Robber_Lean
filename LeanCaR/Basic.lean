@@ -447,6 +447,29 @@ lemma ex_copstrat {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite] (s:�
     simp_all
     aesop
 
+noncomputable def positions
+    {n : ℕ} {G : SimpleGraph (Fin (n + 1))} {U : Finset (Fin (n + 1))}
+    [G.LocallyFinite] {k : ℕ}
+    (h_U : U.Nonempty ∧ ∀ u ∈ U, (G.neighborFinset u ∩ U).card ≥ k)
+    (strat : cop_strategy (n + 1))
+    (t : ℕ) : (Finset (Fin (n+1)) × U) := match t with
+| .zero =>
+    let u₀ := Classical.choose h_U.left
+    let h₀ : u₀ ∈ U := Classical.choose_spec h_U.left
+    (∅, ⟨u₀, h₀⟩)
+| .succ t =>
+    let candidates := (G.neighborFinset (positions h_U strat t).2 ∩ U) \ strat
+      ((positions h_U strat t).1, (positions h_U strat t).2)
+    if h : candidates.Nonempty then
+      let r := Classical.choose h
+      have hr : r ∈ candidates := Classical.choose_spec h
+      have : r ∈ U := by
+        simp [candidates] at hr
+        exact hr.1.2
+      (strat ((positions h_U strat t).1, (positions h_U strat t).2),⟨r,this⟩)
+    else
+      (strat ((positions h_U strat t).1, (positions h_U strat t).2),(positions h_U strat t).2)
+
 noncomputable section
  theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
   let k := degeneracy G
@@ -469,49 +492,31 @@ noncomputable section
     intro strat_width
     apply Nat.le_of_lt_add_one at valid_strat
 
+    let positions' := positions h_U strat
+
     -- let u : Fin (n+1) =
-    let positions : ℕ → (Finset (Fin (n+1)) × U) := fun t =>
-      Nat.rec
-        (
-          let u₀ := Classical.choose h_U.left
-          let h₀ : u₀ ∈ U := Classical.choose_spec h_U.left
-          (∅, ⟨u₀, h₀⟩)
-        )
-        (fun _ (cops, robber) =>
-          let candidates := (G.neighborFinset robber ∩ U) \ strat (cops, robber)
-          if h : candidates.Nonempty then
-            let r := Classical.choose h
-            have hr : r ∈ candidates := Classical.choose_spec h
-            have : r ∈ U := by
-              simp [candidates] at hr
-              exact hr.1.2  -- From r ∈ (G.neighborFinset u ∩ U
-            (strat (cops, robber),⟨r,this⟩)
-          else
-            (strat (cops, robber),robber)
-        )
-        t
     let play : Play G := {
-      C := fun t => (positions t).1,
-      R := fun t => (positions t).2.1,
-      init := by
-        simp [positions]
+      C := fun t => (positions' t).1,
+      R := fun t => (positions' t).2.1,
+      init := by simp [positions', positions]
     }
     use play
     constructor
     · constructor
       · unfold valid_robber
         intro t
-        let candidates := (G.neighborFinset (positions t).2 ∩ U) \ strat ((positions t).1, (positions t).2.1)
+        let candidates := (G.neighborFinset (positions' t).2 ∩ U) \ strat ((positions' t).1, (positions' t).2.1)
         by_cases h : candidates.Nonempty
         · sorry
-        · have h_next : positions (t+1) = ((G.neighborFinset (positions t).2 ∩ U),(positions t).2) := by
-            simp [positions, Nat.rec]
-            -- rwa [if_neg (by sorry)]
+        · have h_next : positions' (t+1) = ((G.neighborFinset (positions' t).2 ∩ U),(positions' t).2) := by
+            simp_rw [positions']
+            rw [positions]
+            simp [positions', h, candidates]
             sorry
           have h_eq : play.R (t+1) = play.R (t) := by
             calc
-            _ = (positions (t+1)).2.1 := rfl
-            _ = (positions t).2.1 := by simp_all
+            _ = (positions' (t+1)).2.1 := rfl
+            _ = (positions' t).2.1 := by simp_all
             _ = play.R (t) := by rfl
           rw [h_eq]
           use SimpleGraph.Walk.nil
@@ -521,8 +526,8 @@ noncomputable section
           intro
           have h_cops : play.C (t + 1) = (G.neighborFinset (play.R t) ∩ U) := by
             calc
-            _ = (positions (t+1)).1 := rfl
-            _ = (G.neighborFinset (positions t).2 ∩ U) := by simp_all
+            _ = (positions' (t+1)).1 := rfl
+            _ = (G.neighborFinset (positions' t).2 ∩ U) := by simp_all
             _ = (G.neighborFinset (play.R t) ∩ U) := by congr
           rw [h_cops]
           simp
