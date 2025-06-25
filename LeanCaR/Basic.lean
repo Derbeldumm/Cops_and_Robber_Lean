@@ -18,7 +18,6 @@ namespace cops_and_robbers
 /-- A layout is represented as a ordering of vertices, so as -/
 abbrev Layout (n : ℕ) : Type := Equiv.Perm (Fin n)
 
-
 def AdjPred {n:ℕ} (G: SimpleGraph (Fin n)) [G.LocallyFinite] (L: Layout n) (v: Fin n) :=
   { w : Fin n | (L w) < (L v) ∧ w ∈ G.neighborFinset v}.toFinset
 /-- Count of adjacent predecessors for a vertex v in a given layout -/
@@ -368,15 +367,27 @@ theorem degeneracy_obstruction {n: ℕ} (G : SimpleGraph (Fin (n+1))) [G.Locally
       _ ≤ b := HL
 
 /--
-A play of the cops‐and‐robber game on a finite graph.
-• S : ℕ → Finset (Fin n) gives the cops' positions (as a finset)
-  in each round (with S 0 = ∅).
-• R : ℕ → Fin n gives the robber's position in each round.
+The positions of the cops and the robber at a fixed time.
+-/
+@[ext]
+structure CopsRobberPosition (n : ℕ) where
+  C : Finset (Fin n)
+  R : Fin n
+
+/--
+A play of the cops‐and‐robber game on a finite graph. It is given by the
+positions of the cops and the robber at each time step, along with the
+guarantee that there are no cops at time 0.
 -/
 structure Play {n : ℕ} (G : SimpleGraph (Fin n)) where
-  (C : ℕ → Finset (Fin n))
-  (R : ℕ → Fin n)
-  (init : C 0 = ∅)
+  pos : ℕ → CopsRobberPosition n
+  init : (pos 0).C = ∅
+
+@[simp] abbrev Play.C {n : ℕ} {G : SimpleGraph (Fin n)} (play : Play G) :=
+  fun t ↦ (play.pos t).C
+
+@[simp] abbrev Play.R {n : ℕ} {G : SimpleGraph (Fin n)} (play : Play G) :=
+  fun t ↦ (play.pos t).R
 
 /--
 A robber move is valid for a given speed if for every round i there exists a walk
@@ -387,24 +398,22 @@ in G from the robber's position at round i to his position at round i+1 such tha
 -/
 def valid_robber {n : ℕ} {G : SimpleGraph (Fin n)} (play : Play G) (speed : ℕ) : Prop :=
   ∀ t : ℕ,
-    ∃ (walk : SimpleGraph.Walk G (play.R t) (play.R (t+1))),
-      (walk.support.toFinset ∩ (play.C t) ∩ (play.C (t+1)) = ∅) ∧
+    ∃ (walk : SimpleGraph.Walk G (play.R t) (play.R (t + 1))),
+      (walk.support.toFinset ∩ play.C t ∩ play.C (t + 1) = ∅) ∧
       walk.support.length ≤ (speed+1)
 
 /--
 The robber is caught if there is some round t at which the robber's position
 is guarded by a cop.
 -/
-def robber_caught {n : ℕ} {G : SimpleGraph (Fin n)} (p : Play G) : Prop :=
-  ∃ t : ℕ, p.R t ∈ p.C t
-
+def robber_caught {n : ℕ} {G : SimpleGraph (Fin n)} (play : Play G) : Prop :=
+  ∃ t : ℕ, play.R t ∈ play.C t
 
 /--
 A cop strategy is a function that, given the current positions of the cops and
 the robber, produces the cops' positions for the next round.
 -/
-abbrev cop_strategy (n : ℕ) : Type :=
-  (curr_positions: Finset (Fin n) × (Fin n)) → Finset (Fin n)
+abbrev cop_strategy (n : ℕ) : Type := CopsRobberPosition n → Finset (Fin n)
 
 /--
 A cop strategy is valid (with parameters speed and width) if for every play on G
@@ -416,11 +425,11 @@ it follows that:
   - The number of cops used at every round does not exceed `width`.
 -/
 def valid_cop_strategy {n : ℕ}
-  (strat : cop_strategy n) (G : SimpleGraph (Fin n)) (speed : ℕ) (width : ℕ): Prop :=
-  (∀x:(Finset (Fin n) × (Fin n)), (strat x).card ≤ width
-  )∧
-  (∀ play : Play G,
-    ((valid_robber play speed) ∧ (∀ i : ℕ, play.C (i+1) = strat (play.C i, play.R i))) → robber_caught play)
+    (strat : cop_strategy n) (G : SimpleGraph (Fin n)) (speed : ℕ) (width : ℕ) : Prop :=
+  (∀ x, (strat x).card ≤ width)
+  ∧ ∀ play : Play G,
+    (valid_robber play speed ∧ ∀ i : ℕ, play.C (i + 1) = strat (play.pos i))
+      → robber_caught play
 
 /--
 The parameter va_cw (for a robber of speed s on a graph G) is defined as the least
@@ -431,54 +440,67 @@ caught while using at most k cops in every round.
 noncomputable def va_cw {n : ℕ} (G : SimpleGraph (Fin (n+1))) (s : ℕ) : ℕ :=
   sInf { width : ℕ | ∃ f : cop_strategy (n+1), valid_cop_strategy f G s width }
 
-
-lemma ex_copstrat {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite] (s:ℕ): n+1 ∈ { width : ℕ | ∃ f : cop_strategy (n+1), valid_cop_strategy f G s width } := by
+lemma ex_copstrat {n : ℕ} (G: SimpleGraph (Fin (n+1))) [G.LocallyFinite] (s : ℕ) :
+    n + 1 ∈ { width : ℕ | ∃ f : cop_strategy (n+1), valid_cop_strategy f G s width } := by
   simp
-  let f : cop_strategy (n+1) := fun (curr_positions) => Finset.univ
-  use f
+  use fun (curr_positions) => Finset.univ
   unfold valid_cop_strategy
   constructor
   · simp [*]
-    aesop
   · unfold robber_caught
     intro play
     intro
     use 1
     simp_all
-    aesop
 
+/--
+TODO: Docs
+-/
 noncomputable def positions_from_hideout
-    {n : ℕ} {G : SimpleGraph (Fin (n + 1))} {U : Finset (Fin (n + 1))}
-    [G.LocallyFinite] {k : ℕ}
-    (h_U : U.Nonempty ∧ ∀ u ∈ U, (G.neighborFinset u ∩ U).card ≥ k)
-    (strat : cop_strategy (n + 1))
-    (t : ℕ) : (Finset (Fin (n+1)) × U) := match t with
+    {n : ℕ} (G : SimpleGraph (Fin (n + 1))) {U : Finset (Fin (n + 1))}
+    [G.LocallyFinite] (hU_nonempty : U.Nonempty)
+    (strat : cop_strategy (n + 1)) (t : ℕ) :
+    CopsRobberPosition (n + 1) :=
+match t with
 | .zero =>
-    let u₀ := Classical.choose h_U.left
-    let h₀ : u₀ ∈ U := Classical.choose_spec h_U.left
-    (∅, ⟨u₀, h₀⟩)
+    ⟨∅, Classical.choose hU_nonempty⟩
 | .succ t =>
-    let candidates := (G.neighborFinset (positions_from_hideout h_U strat t).2 ∩ U) \ strat
-      ((positions_from_hideout h_U strat t).1, (positions_from_hideout h_U strat t).2)
-    if h : candidates.Nonempty then
-      let r := Classical.choose h
-      have hr : r ∈ candidates := Classical.choose_spec h
-      have : r ∈ U := by
-        simp [candidates] at hr
-        exact hr.1.2
-      (strat ((positions_from_hideout h_U strat t).1, (positions_from_hideout h_U strat t).2),⟨r,this⟩)
-    else
-      (strat ((positions_from_hideout h_U strat t).1, (positions_from_hideout h_U strat t).2),(positions_from_hideout h_U strat t).2)
+    let pos := positions_from_hideout G hU_nonempty strat t
+    let candidates := (G.neighborFinset pos.R ∩ U) \ strat pos
+    ⟨strat pos, if h : candidates.Nonempty then Classical.choose h else pos.R⟩
 
-noncomputable section
- theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
+/--
+The possible positions the robber may go to within `U` given a cop strategy
+-/
+@[simp] noncomputable def positions_from_hideout_candidates
+    {n : ℕ} (G : SimpleGraph (Fin (n + 1))) {U : Finset (Fin (n + 1))}
+    [G.LocallyFinite] (hU_nonempty : U.Nonempty)
+    (strat : cop_strategy (n + 1)) (t : ℕ) :
+    Finset (Fin (n + 1)) :=
+  let pos := positions_from_hideout G hU_nonempty strat t
+  (G.neighborFinset pos.R ∩ U) \ strat pos
+
+/--
+Auxillary lemma using `positions_from_hideout_candidates` to make proofs cleaner
+-/
+lemma positions_from_hideout_eq
+    {n : ℕ} (G : SimpleGraph (Fin (n + 1))) {U : Finset (Fin (n + 1))}
+    [G.LocallyFinite] (hU_nonempty : U.Nonempty)
+    (strat : cop_strategy (n + 1)) (t : ℕ) :
+    positions_from_hideout G hU_nonempty strat t = match t with
+    | Nat.zero => ⟨∅, Classical.choose hU_nonempty⟩
+    | Nat.succ t =>
+      let pos := positions_from_hideout G hU_nonempty strat t
+      let candidates := positions_from_hideout_candidates G hU_nonempty strat t
+      ⟨strat pos, if h : candidates.Nonempty then Classical.choose h else pos.R⟩ := by
+  simpa using by rw [positions_from_hideout.eq_def]
   let k := degeneracy G
   have k_eq : k=degeneracy G := rfl
   apply Nat.le_antisymm
   · --build robber strat from obstruction
     have : degeneracy G ≥ k := by exact Nat.le_refl (degeneracy G)
     rw [(degeneracy_obstruction G)] at this
-    obtain ⟨U, h_U⟩ := this
+    obtain ⟨U, ⟨hU_nonempty, hU⟩⟩ := this
     rw [← k_eq]
     unfold va_cw
     apply le_csInf
