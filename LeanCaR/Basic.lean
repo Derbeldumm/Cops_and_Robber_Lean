@@ -494,6 +494,26 @@ lemma positions_from_hideout_eq
       let candidates := positions_from_hideout_candidates G hU_nonempty strat t
       ⟨strat pos, if h : candidates.Nonempty then Classical.choose h else pos.R⟩ := by
   simpa using by rw [positions_from_hideout.eq_def]
+
+lemma positions_from_hideout_robber_in_U
+    {n : ℕ} {G : SimpleGraph (Fin (n + 1))} {U : Finset (Fin (n + 1))}
+    [G.LocallyFinite] {k : ℕ}
+    (hU_nonempty : U.Nonempty)
+    (hU : ∀ u ∈ U, (G.neighborFinset u ∩ U).card ≥ k)
+    (strat : cop_strategy (n + 1)) (t : ℕ) :
+    (positions_from_hideout G hU_nonempty strat t).R ∈ U := by
+  rw [positions_from_hideout.eq_def]
+  cases t with
+  | zero => simpa using Classical.choose_spec hU_nonempty
+  | succ t =>
+    simp only
+    split_ifs with h_candidates
+    · apply Finset.mem_of_subset ?_ (Classical.choose_spec h_candidates)
+      intro
+      simpa using by tauto
+    · exact positions_from_hideout_robber_in_U hU_nonempty hU strat t
+
+theorem degeneracy_eq_va_cw_1 {n: ℕ} {G : SimpleGraph (Fin (n+1))} [G.LocallyFinite]: degeneracy G + 1 = va_cw G 1 := by
   let k := degeneracy G
   have k_eq : k=degeneracy G := rfl
   apply Nat.le_antisymm
@@ -514,94 +534,70 @@ lemma positions_from_hideout_eq
     intro strat_width
     apply Nat.le_of_lt_add_one at valid_strat
 
-    let positions' := positions_from_hideout h_U strat
-
-    -- let u : Fin (n+1) =
-    let play : Play G := {
-      C := fun t => (positions' t).1,
-      R := fun t => (positions' t).2.1,
-      init := by simp [positions', positions_from_hideout]
-    }
+    set play : Play G := {
+      pos := positions_from_hideout G hU_nonempty strat
+      init := by simp [positions_from_hideout]
+    } with h_play_eq
     use play
     unfold robber_caught
     simp
+
+    have h_next (t : ℕ) (ht : ¬(positions_from_hideout_candidates G hU_nonempty strat t).Nonempty):
+        play.pos (t + 1) = ⟨(G.neighborFinset (play.R t) ∩ U), play.R t⟩ := by
+      simp_rw [play]
+      rw [positions_from_hideout_eq]
+      simp only [ht, dite_false, CopsRobberPosition.ext_iff, and_true]
+
+      simp [positions_from_hideout_candidates] at ht
+      apply Finset.eq_of_superset_of_card_ge ht
+      calc
+        _ ≤ width := strat_width _
+        _ ≤ k := valid_strat
+        _ ≤ _ := hU _ (positions_from_hideout_robber_in_U ‹_› ‹_› _ _)
+
+    have hRC (t : ℕ) : play.R t ∉ play.C t := by
+      cases t with
+      | zero => simp [Play.init]
+      | succ t =>
+        by_cases h_candidates :
+            (positions_from_hideout_candidates G hU_nonempty strat t).Nonempty
+        · simp only [h_play_eq, Play.R, Play.C]
+          rw [positions_from_hideout_eq]
+          have := Classical.choose_spec h_candidates
+          simp [positions_from_hideout_candidates] at this
+          simp only [h_candidates, dite_true, this, not_false_iff]
+        · simp [Play.R, Play.C, h_next t h_candidates]
+
     constructor
     · unfold valid_robber
       rw [← forall_and]
       intro t
-      let candidates := (G.neighborFinset (positions' t).2 ∩ U) \ strat ((positions' t).1, (positions' t).2.1)
+      let candidates := positions_from_hideout_candidates G hU_nonempty strat t
       by_cases h : candidates.Nonempty
-      · have h_next : (positions' (t+1)).2.1 ∈ candidates := by
-          simp_rw [positions']
-          rw [positions_from_hideout]
-          simp only [positions', h, candidates]
-          simp only [↓reduceDIte]
+      · have h_next : play.R (t+1) ∈ candidates := by
+          simp only [h_play_eq, Play.R]
+          rw [positions_from_hideout_eq]
+          simp only [h, candidates, dite_true]
           apply Classical.choose_spec
+        have h_adj : G.Adj (play.R t) (play.R (t + 1)) := by
+          aesop
+
         simp
-
-        have h_adj : G.Adj ↑(positions' t).2 ↑(positions' (t + 1)).2 := by
-          aesop
         constructor
-        · use SimpleGraph.Walk.cons h_adj SimpleGraph.Walk.nil
+        · use h_adj.toWalk
           simp
-          have h1 : play.R t ∉ play.C t := sorry
-          have h2 : ↑(positions' (t + 1)).2 ∉ play.C (t+1) := sorry
+          have h1 : play.R t ∉ play.C t := hRC t
+          have h2 : play.R (t + 1) ∉ play.C (t + 1) := hRC (t + 1)
           aesop
-        · simp [play]
-          simp_rw [positions']
-          rw [positions_from_hideout]
-          simp only [positions', h, candidates]
-          simp
+        · simp [play, positions_from_hideout]
 
-      · have h_next : positions' (t+1) = ((G.neighborFinset (positions' t).2 ∩ U),(positions' t).2) := by
-          simp_rw [positions']
-          rw [positions_from_hideout]
-          simp [positions', h, candidates]
-
-          let S_strat := strat ((positions_from_hideout h_U strat t).1, ↑((positions_from_hideout h_U strat t).2))
-          let S_neighbors := G.neighborFinset ↑((positions_from_hideout h_U strat t).2) ∩ U
-
-          apply Eq.symm
-          apply Finset.eq_of_subset_of_card_le
-          · have h_empty : S_neighbors \ S_strat = ∅ := by
-              exact Finset.not_nonempty_iff_eq_empty.mp h
-            exact Finset.sdiff_eq_empty_iff_subset.mp h_empty
-          · have card_strat_le_k : S_strat.card ≤ k :=
-              (strat_width _).trans valid_strat
-
-            have robber_in_U : ↑((positions_from_hideout h_U strat t).2) ∈ U :=
-              (positions_from_hideout h_U strat t).2.property
-            have card_neighbors_ge_k : S_neighbors.card ≥ k :=
-              h_U.2 _ robber_in_U
-
-            -- Combining the two inequalities proves the goal.
-            exact card_strat_le_k.trans card_neighbors_ge_k
-        have h_eq : play.R (t+1) = play.R (t) := by
-          calc
-          _ = (positions' (t+1)).2.1 := rfl
-          _ = (positions' t).2.1 := by simp_all
-          _ = play.R (t) := by rfl
-        rw [h_eq]
+      · specialize h_next t h
         constructor
-        · use SimpleGraph.Walk.nil
-          simp
-          refine Finset.singleton_inter_of_not_mem ?_
-          simp
-          intro
-          have h_cops : play.C (t + 1) = (G.neighborFinset (play.R t) ∩ U) := by
-            calc
-            _ = (positions' (t+1)).1 := rfl
-            _ = (G.neighborFinset (positions' t).2 ∩ U) := by simp_all
-            _ = (G.neighborFinset (play.R t) ∩ U) := by congr
-          rw [h_cops]
-          simp
-        · simp [play]
-          simp_rw [positions']
-          rw [positions_from_hideout]
-          simp only [positions', h, candidates]
-          simp
-    · sorry
-
+        · rw [show play.R (t + 1) = play.R t by simp [h_next]]
+          use SimpleGraph.Walk.nil
+          simp [h_next]
+        · simp [h_next, play, positions_from_hideout]
+    · exact hRC
 
   · --build cop strat from Layout
     have : k ∈ ({n' | ∃ L, isValidDegeneracy G L n'}) := by
@@ -614,22 +610,21 @@ lemma positions_from_hideout_eq
     unfold va_cw
     apply Nat.sInf_le
     simp
-    let f : cop_strategy (n+1) := fun (curr_positions) =>
-      insert curr_positions.snd (AdjPred G L curr_positions.snd)
+    let f : cop_strategy (n+1) := fun pos ↦ insert pos.R (AdjPred G L pos.R)
     use f
     unfold valid_cop_strategy
     constructor
-    · intro positions
+    · intro pos
       simp [f]
       rw [← k_eq]
-      trans (AdjPred G L (positions.2)).card + 1
-      · exact Finset.card_insert_le (positions.2) (AdjPred G L (positions.2))
+      trans (AdjPred G L pos.R).card + 1
+      · exact Finset.card_insert_le (pos.R) (AdjPred G L pos.R)
       · simp
-        exact h_L (positions.2)
+        exact h_L pos.R
     · intro play
       intro ⟨h_valid_robber, h_valid_play⟩
       unfold robber_caught
-      have h_c : ∀t, (∃s≤t, play.R s ∈ play.C s) ∨ (L (play.R t)).val ≥ t := by
+      have h_c : ∀ t, (∃ s ≤ t, play.R s ∈ play.C s) ∨ (L (play.R t)).val ≥ t := by
         intro t
         induction t
         case zero =>
@@ -646,9 +641,9 @@ lemma positions_from_hideout_eq
               exact Nat.le_add_right_of_le h
             apply h1 at this
             exact this
-          · have : (L (play.R t)) < (L (play.R (t + 1))) := by
+          · have : L (play.R t) < L (play.R (t + 1)) := by
               contrapose! h1
-              use (t+1)
+              use (t + 1)
               simp
               simp [*]
               simp [f]
@@ -666,11 +661,12 @@ lemma positions_from_hideout_eq
                 have h : walk.length = 1 := by
                   cases' Nat.le_one_iff_eq_zero_or_eq_one.mp h_walk with h0 h1
                   · apply SimpleGraph.Walk.eq_of_length_eq_zero at h0
-                    have : L (play.R (t + 1)) = L (play.R t) := by
+                    have : L (play.pos (t + 1)).R = L (play.pos t).R := by
                       exact congrArg (⇑L) (id (Eq.symm h0))
                     aesop
                   · exact h1
                 exact SimpleGraph.Walk.adj_of_length_eq_one h
+            simp only [Play.R, Play.C] at *
             omega
       specialize h_c (n+1)
       contrapose! h_c
